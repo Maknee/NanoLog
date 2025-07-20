@@ -21,7 +21,7 @@ set(PARSER_PY ${PROJECT_SOURCE_DIR}/preprocessor/parser.py)
 
 add_custom_command(
     OUTPUT ${GENERATED_CODE_CC}
-    COMMAND ${CMAKE_CXX_COMPILER} -DPREPROCESSOR_NANOLOG -E -I${PROJECT_SOURCE_DIR}/runtime ${CLIENT_CC} -o ${CMAKE_CURRENT_BINARY_DIR}/client.cc.i
+    COMMAND ${CMAKE_CXX_COMPILER} -E -I${PROJECT_SOURCE_DIR}/runtime ${CLIENT_CC} -o ${CMAKE_CURRENT_BINARY_DIR}/client.cc.i
     COMMAND ${Python3_EXECUTABLE} ${PARSER_PY} --mapOutput=${CMAKE_CURRENT_BINARY_DIR}/client.map ${CMAKE_CURRENT_BINARY_DIR}/client.cc.i
     COMMAND ${Python3_EXECUTABLE} ${PARSER_PY} --combinedOutput=${GENERATED_CODE_CC} ${CMAKE_CURRENT_BINARY_DIR}/client.map
     COMMAND ${CMAKE_COMMAND} -E remove ${CMAKE_CURRENT_BINARY_DIR}/client.map ${CMAKE_CURRENT_BINARY_DIR}/client.cc.i ${CMAKE_CURRENT_BINARY_DIR}/client.cc.ii
@@ -68,9 +68,6 @@ target_compile_definitions(${PROJECT_NAME}
     PUBLIC
         # These are needed by consumers
         $<$<COMPILE_FEATURES:cxx_std_17>:>
-    PRIVATE
-        # Force C++17 mode by undefining preprocessor flag if it exists
-        -UPREPROCESSOR_NANOLOG
 )
 
 # Set C++ standard requirement for consumers
