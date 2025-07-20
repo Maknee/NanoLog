@@ -6,31 +6,9 @@ list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/modules")
 
 set(CMAKE_CXX_STANDARD 17)
 
-# Find Python for the preprocessor
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
-
 # pre-requisites
 find_package(Threads REQUIRED)
 find_package(RT REQUIRED)
-
-# Generate GeneratedCode.cc from client.cc using the preprocessor
-set(GENERATED_CODE_CC ${CMAKE_CURRENT_BINARY_DIR}/GeneratedCode.cc)
-set(CLIENT_CC ${PROJECT_SOURCE_DIR}/runtime/testHelper/client.cc)
-set(PARSER_PY ${PROJECT_SOURCE_DIR}/preprocessor/parser.py)
-
-add_custom_command(
-    OUTPUT ${GENERATED_CODE_CC}
-    COMMAND ${CMAKE_CXX_COMPILER} -DPREPROCESSOR_NANOLOG -E -I${PROJECT_SOURCE_DIR}/runtime ${CLIENT_CC} -o ${CMAKE_CURRENT_BINARY_DIR}/client.cc.i
-    COMMAND ${Python3_EXECUTABLE} ${PARSER_PY} --mapOutput=${CMAKE_CURRENT_BINARY_DIR}/client.map ${CMAKE_CURRENT_BINARY_DIR}/client.cc.i
-    COMMAND ${Python3_EXECUTABLE} ${PARSER_PY} --combinedOutput=${GENERATED_CODE_CC} ${CMAKE_CURRENT_BINARY_DIR}/client.map
-    COMMAND ${CMAKE_COMMAND} -E remove ${CMAKE_CURRENT_BINARY_DIR}/client.map ${CMAKE_CURRENT_BINARY_DIR}/client.cc.i ${CMAKE_CURRENT_BINARY_DIR}/client.cc.ii
-    DEPENDS ${CLIENT_CC} ${PARSER_PY}
-    COMMENT "Generating GeneratedCode.cc from client.cc"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-)
-
-# Add custom target to ensure GeneratedCode.cc is built
-add_custom_target(GeneratedCode DEPENDS ${GENERATED_CODE_CC})
 
 file(GLOB HEADERS ${PROJECT_SOURCE_DIR}/runtime/*.h)
 file(GLOB SOURCES ${PROJECT_SOURCE_DIR}/runtime/*.cc)
@@ -38,35 +16,25 @@ file(GLOB SOURCES ${PROJECT_SOURCE_DIR}/runtime/*.cc)
 # Exclude LogDecompressor.cc from the library as it contains main()
 list(REMOVE_ITEM SOURCES ${PROJECT_SOURCE_DIR}/runtime/LogDecompressor.cc)
 
-# Add the generated code to sources
-list(APPEND SOURCES ${GENERATED_CODE_CC})
-
 add_library(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
 # Create an alias target for easier consumption
 add_library(NanoLog::NanoLog ALIAS ${PROJECT_NAME})
 
-# Make sure GeneratedCode is built before the library
-add_dependencies(${PROJECT_NAME} GeneratedCode)
-
 # Set up include directories - PUBLIC so consumers get them automatically
 target_include_directories(${PROJECT_NAME}
     PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/runtime>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>  # For GeneratedCode.h
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
         ${PROJECT_SOURCE_DIR}/runtime  # For internal compilation
 )
 
-# Add compile definitions - PUBLIC for essential ones, PRIVATE for internal
+# Add compile definitions - PUBLIC for essential ones
 target_compile_definitions(${PROJECT_NAME} 
     PUBLIC
         # These are needed by consumers
         $<$<COMPILE_FEATURES:cxx_std_17>:>
-    PRIVATE
-        # Internal build configuration
-        PREPROCESSOR_NANOLOG
 )
 
 # Set C++ standard requirement for consumers
@@ -100,12 +68,9 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}.pc.in ${PROJECT_NAME}
 option(BUILD_DECOMPRESSOR "Build decompressor app" ON)
 if(BUILD_DECOMPRESSOR)
     add_executable(decompressor ${PROJECT_SOURCE_DIR}/runtime/LogDecompressor.cc)
-    add_dependencies(decompressor GeneratedCode)
     target_include_directories(decompressor PRIVATE 
         ${PROJECT_SOURCE_DIR}/runtime
-        ${CMAKE_CURRENT_BINARY_DIR}  # For GeneratedCode.h
     )
-    target_compile_definitions(decompressor PRIVATE PREPROCESSOR_NANOLOG)
     target_link_libraries(decompressor ${PROJECT_NAME})
     
     # Set compiler flags to match the original makefile
