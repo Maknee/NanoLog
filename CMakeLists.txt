@@ -16,6 +16,9 @@ file(GLOB SOURCES ${PROJECT_SOURCE_DIR}/runtime/*.cc)
 # Exclude LogDecompressor.cc from the library as it contains main()
 list(REMOVE_ITEM SOURCES ${PROJECT_SOURCE_DIR}/runtime/LogDecompressor.cc)
 
+# Exclude LogTest.cc from the library (test file)
+list(REMOVE_ITEM SOURCES ${PROJECT_SOURCE_DIR}/runtime/LogTest.cc)
+
 add_library(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
 # Create an alias target for easier consumption
