@@ -73,14 +73,16 @@ printLogMetadataContainingSubstring(std::string searchString)
 
 #ifdef ENABLE_JSON_OUTPUT
 /**
- * Convert a LogMessage to JSON format (simplified version)
+ * Convert a LogMessage to JSON format with proper text formatting
  * 
  * \param logMsg
  *      The log message to convert
+ * \param formattedText
+ *      The properly formatted text representation of the log message
  * \return
  *      JSON object representing the log message
  */
-nlohmann::json logMessageToJson(LogMessage& logMsg) {
+nlohmann::json logMessageToJson(LogMessage& logMsg, const std::string& formattedText) {
     nlohmann::json jsonLog;
     
     // Basic log information
@@ -88,23 +90,19 @@ nlohmann::json logMessageToJson(LogMessage& logMsg) {
     jsonLog["timestamp"] = logMsg.getTimestamp();
     jsonLog["numArgs"] = logMsg.getNumArgs();
     
-    // Extract arguments
-    nlohmann::json args = nlohmann::json::array();
+    // Include the properly formatted message text
+    jsonLog["message"] = formattedText;
+    
+    // Extract raw arguments for programmatic access
+    nlohmann::json rawArgs = nlohmann::json::array();
     for (int i = 0; i < logMsg.getNumArgs(); ++i) {
-        // Note: This is a simplified version that treats all args as uint64_t
-        // In practice, you'd need type information to properly decode arguments
-        try {
-            args.push_back(logMsg.get<uint64_t>(i));
-        } catch (...) {
-            // If we can't get as uint64_t, try as double
-            try {
-                args.push_back(logMsg.get<double>(i));
-            } catch (...) {
-                args.push_back(nullptr);
-            }
-        }
+        // Store raw values as hex strings for precise representation
+        uint64_t rawValue = logMsg.get<uint64_t>(i);
+        char hexStr[32];
+        snprintf(hexStr, sizeof(hexStr), "0x%016lx", rawValue);
+        rawArgs.push_back(hexStr);
     }
-    jsonLog["arguments"] = args;
+    jsonLog["rawArguments"] = rawArgs;
     
     return jsonLog;
 }
@@ -132,11 +130,34 @@ int64_t outputAsJson(Decoder& decoder, FILE* outputFd, bool prettyPrint, bool or
         // For ordered output, collect all messages first then sort by timestamp
         std::vector<std::pair<uint64_t, nlohmann::json>> timestampedLogs;
         
-        while (decoder.getNextLogStatement(logMsg)) {
-            nlohmann::json jsonLog = logMessageToJson(logMsg);
+        // Capture formatted text output to a temporary file
+        FILE* tempFile = tmpfile();
+        while (decoder.getNextLogStatement(logMsg, tempFile)) {
+            // Read the formatted text from temp file
+            rewind(tempFile);
+            char buffer[4096];
+            std::string formattedText;
+            while (fgets(buffer, sizeof(buffer), tempFile)) {
+                formattedText += buffer;
+            }
+            
+            // Remove trailing newline if present
+            if (!formattedText.empty() && formattedText.back() == '\n') {
+                formattedText.pop_back();
+            }
+            if (!formattedText.empty() && formattedText.back() == '\r') {
+                formattedText.pop_back();
+            }
+            
+            nlohmann::json jsonLog = logMessageToJson(logMsg, formattedText);
             timestampedLogs.push_back({logMsg.getTimestamp(), jsonLog});
             count++;
+            
+            // Clear temp file for next iteration
+            fclose(tempFile);
+            tempFile = tmpfile();
         }
+        if (tempFile) fclose(tempFile);
         
         // Sort by timestamp
         std::sort(timestampedLogs.begin(), timestampedLogs.end());
@@ -147,11 +168,33 @@ int64_t outputAsJson(Decoder& decoder, FILE* outputFd, bool prettyPrint, bool or
         }
     } else {
         // For unordered output, stream directly
-        while (decoder.getNextLogStatement(logMsg)) {
-            nlohmann::json jsonLog = logMessageToJson(logMsg);
+        FILE* tempFile = tmpfile();
+        while (decoder.getNextLogStatement(logMsg, tempFile)) {
+            // Read the formatted text from temp file
+            rewind(tempFile);
+            char buffer[4096];
+            std::string formattedText;
+            while (fgets(buffer, sizeof(buffer), tempFile)) {
+                formattedText += buffer;
+            }
+            
+            // Remove trailing newline if present
+            if (!formattedText.empty() && formattedText.back() == '\n') {
+                formattedText.pop_back();
+            }
+            if (!formattedText.empty() && formattedText.back() == '\r') {
+                formattedText.pop_back();
+            }
+            
+            nlohmann::json jsonLog = logMessageToJson(logMsg, formattedText);
             logArray.push_back(jsonLog);
             count++;
+            
+            // Clear temp file for next iteration
+            fclose(tempFile);
+            tempFile = tmpfile();
         }
+        if (tempFile) fclose(tempFile);
     }
     
     // Create final JSON object
