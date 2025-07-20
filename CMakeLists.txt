@@ -79,6 +79,9 @@ target_link_libraries(${PROJECT_NAME}
         ${RT_LIBRARIES}
 )
 
+# Add compile options for better code safety
+target_compile_options(${PROJECT_NAME} PRIVATE -Werror=format)
+
 set_target_properties(${PROJECT_NAME} PROPERTIES 
     VERSION ${PROJECT_VERSION}
     SOVERSION 1
