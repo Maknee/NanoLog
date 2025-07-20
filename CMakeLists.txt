@@ -63,6 +63,9 @@ target_include_directories(${PROJECT_NAME}
         ${PROJECT_SOURCE_DIR}/runtime  # For internal compilation
 )
 
+# Force C++17 mode by removing any preprocessor definitions
+# remove_definitions(-DPREPROCESSOR_NANOLOG)
+
 # Add compile definitions - C++17 is the default API (force disable preprocessor mode)
 target_compile_definitions(${PROJECT_NAME} 
     PUBLIC
@@ -99,6 +102,8 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}.pc.in ${PROJECT_NAME}
 
 # Build decompressor executable
 option(BUILD_DECOMPRESSOR "Build decompressor app" ON)
+option(DECOMPRESSION_OUTPUT_JSON "Enable JSON output support in decompressor" ON)
+
 if(BUILD_DECOMPRESSOR)
     add_executable(decompressor ${PROJECT_SOURCE_DIR}/runtime/LogDecompressor.cc)
     add_dependencies(decompressor GeneratedCode)
@@ -110,6 +115,21 @@ if(BUILD_DECOMPRESSOR)
     
     # Set compiler flags to match the original makefile
     target_compile_options(decompressor PRIVATE -O3 -g -DNDEBUG)
+    
+    # Add JSON support if requested
+    if(DECOMPRESSION_OUTPUT_JSON)
+        # Fetch nlohmann/json
+        include(FetchContent)
+        FetchContent_Declare(
+            nlohmann_json
+            GIT_REPOSITORY https://github.com/nlohmann/json.git
+            GIT_TAG v3.11.3
+        )
+        FetchContent_MakeAvailable(nlohmann_json)
+        
+        target_link_libraries(decompressor nlohmann_json::nlohmann_json)
+        target_compile_definitions(decompressor PRIVATE ENABLE_JSON_OUTPUT)
+    endif()
 endif()
 
 option(BUILD_PERF "Build perf app" OFF)

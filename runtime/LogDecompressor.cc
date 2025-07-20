@@ -28,6 +28,10 @@
 // compression and decompression functions.
 #include "GeneratedCode.h"
 
+#ifdef ENABLE_JSON_OUTPUT
+#include <nlohmann/json.hpp>
+#endif
+
 using namespace NanoLogInternal::Log;
 
 
@@ -66,6 +70,107 @@ printLogMetadataContainingSubstring(std::string searchString)
     }
 }
 #endif // PREPROCESSOR_NANOLOG
+
+#ifdef ENABLE_JSON_OUTPUT
+/**
+ * Convert a LogMessage to JSON format (simplified version)
+ * 
+ * \param logMsg
+ *      The log message to convert
+ * \return
+ *      JSON object representing the log message
+ */
+nlohmann::json logMessageToJson(LogMessage& logMsg) {
+    nlohmann::json jsonLog;
+    
+    // Basic log information
+    jsonLog["logId"] = logMsg.getLogId();
+    jsonLog["timestamp"] = logMsg.getTimestamp();
+    jsonLog["numArgs"] = logMsg.getNumArgs();
+    
+    // Extract arguments
+    nlohmann::json args = nlohmann::json::array();
+    for (int i = 0; i < logMsg.getNumArgs(); ++i) {
+        // Note: This is a simplified version that treats all args as uint64_t
+        // In practice, you'd need type information to properly decode arguments
+        try {
+            args.push_back(logMsg.get<uint64_t>(i));
+        } catch (...) {
+            // If we can't get as uint64_t, try as double
+            try {
+                args.push_back(logMsg.get<double>(i));
+            } catch (...) {
+                args.push_back(nullptr);
+            }
+        }
+    }
+    jsonLog["arguments"] = args;
+    
+    return jsonLog;
+}
+
+/**
+ * Output log messages as JSON to the specified file descriptor
+ * 
+ * \param decoder
+ *      The decoder instance to read from
+ * \param outputFd
+ *      File descriptor to write JSON to
+ * \param prettyPrint
+ *      Whether to format JSON with indentation
+ * \param ordered
+ *      Whether to output in chronological order
+ * \return
+ *      Number of log messages processed
+ */
+int64_t outputAsJson(Decoder& decoder, FILE* outputFd, bool prettyPrint, bool ordered) {
+    nlohmann::json logArray = nlohmann::json::array();
+    LogMessage logMsg;
+    int64_t count = 0;
+    
+    if (ordered) {
+        // For ordered output, collect all messages first then sort by timestamp
+        std::vector<std::pair<uint64_t, nlohmann::json>> timestampedLogs;
+        
+        while (decoder.getNextLogStatement(logMsg)) {
+            nlohmann::json jsonLog = logMessageToJson(logMsg);
+            timestampedLogs.push_back({logMsg.getTimestamp(), jsonLog});
+            count++;
+        }
+        
+        // Sort by timestamp
+        std::sort(timestampedLogs.begin(), timestampedLogs.end());
+        
+        // Add to array in sorted order
+        for (const auto& entry : timestampedLogs) {
+            logArray.push_back(entry.second);
+        }
+    } else {
+        // For unordered output, stream directly
+        while (decoder.getNextLogStatement(logMsg)) {
+            nlohmann::json jsonLog = logMessageToJson(logMsg);
+            logArray.push_back(jsonLog);
+            count++;
+        }
+    }
+    
+    // Create final JSON object
+    nlohmann::json output;
+    output["logMessages"] = logArray;
+    output["totalMessages"] = count;
+    output["decompressor"] = "NanoLog JSON Decompressor";
+    output["version"] = "1.0";
+    
+    // Output JSON
+    if (prettyPrint) {
+        fprintf(outputFd, "%s\n", output.dump(2).c_str());
+    } else {
+        fprintf(outputFd, "%s\n", output.dump().c_str());
+    }
+    
+    return count;
+}
+#endif // ENABLE_JSON_OUTPUT
 
 /**
  * Produces a GNUPlot graphable reverse CDF graph to stdout given a vector of
@@ -129,6 +234,14 @@ void printHelp(const char *exe) {
            "without sorting the messages by time:\r\n");
     printf("\t%s decompressUnordered <logFile>\r\n\r\n", exe);
 
+#ifdef ENABLE_JSON_OUTPUT
+    printf("Decompress the log file into JSON format (sorted by time):\r\n");
+    printf("\t%s decompressJson <logFile> [--pretty]\r\n\r\n", exe);
+
+    printf("Decompress the log file into JSON format (unsorted):\r\n");
+    printf("\t%s decompressUnorderedJson <logFile> [--pretty]\r\n\r\n", exe);
+#endif
+
     printf("Create an RCDF of the inter-log invocation times. Only works\r\n");
     printf("when there is one runtime logging thread:\r\n");
     printf("\t%s rcdfTime <logFile>\r\n\r\n", exe);
@@ -167,6 +280,10 @@ int main(int argc, char** argv) {
     bool doRCDF = false;
     FILE *outputFd = NULL;
     int filterId = -1;
+#ifdef ENABLE_JSON_OUTPUT
+    bool jsonOutput = false;
+    bool prettyPrint = false;
+#endif
 
     if (strcmp(command, "decompress") == 0) {
         outputFd = stdout;
@@ -175,7 +292,25 @@ int main(int argc, char** argv) {
         outputFd = stdout;
     }  else if (strcmp(command, "rcdfTime") == 0) {
         doRCDF = true;
-    } 
+    }
+#ifdef ENABLE_JSON_OUTPUT
+    else if (strcmp(command, "decompressJson") == 0) {
+        outputFd = stdout;
+        sorted = true;
+        jsonOutput = true;
+        // Check for --pretty flag
+        if (argc >= 4 && strcmp(argv[3], "--pretty") == 0) {
+            prettyPrint = true;
+        }
+    } else if (strcmp(command, "decompressUnorderedJson") == 0) {
+        outputFd = stdout;
+        jsonOutput = true;
+        // Check for --pretty flag
+        if (argc >= 4 && strcmp(argv[3], "--pretty") == 0) {
+            prettyPrint = true;
+        }
+    }
+#endif 
 #ifdef PREPROCESSOR_NANOLOG
     else if (strcmp(command, "minMaxMean") == 0) {
         if (argc < 4) {
@@ -266,24 +401,42 @@ int main(int argc, char** argv) {
     }
 
     if (sorted) {
-        int64_t numLogMsgs = decoder.decompressTo(outputFd);
+#ifdef ENABLE_JSON_OUTPUT
+        if (jsonOutput) {
+            int64_t numLogMsgs = outputAsJson(decoder, outputFd, prettyPrint, true);
+            return 0;
+        } else {
+#endif
+            int64_t numLogMsgs = decoder.decompressTo(outputFd);
 
-        if (outputFd)
-            fprintf(outputFd, "\r\n\r\n# Decompression Complete after printing "
-                              "%ld log messages\r\n", numLogMsgs);
-        return 0;
+            if (outputFd)
+                fprintf(outputFd, "\r\n\r\n# Decompression Complete after printing "
+                                  "%ld log messages\r\n", numLogMsgs);
+            return 0;
+#ifdef ENABLE_JSON_OUTPUT
+        }
+#endif
     }
 
     // Perform no aggregation but decompress unsorted.
     if (filterId < 0) {
-        int64_t numLogMsgs = 0;
-        while(decoder.getNextLogStatement(args, outputFd))
-            ++numLogMsgs;
+#ifdef ENABLE_JSON_OUTPUT
+        if (jsonOutput) {
+            int64_t numLogMsgs = outputAsJson(decoder, outputFd, prettyPrint, false);
+            return 0;
+        } else {
+#endif
+            int64_t numLogMsgs = 0;
+            while(decoder.getNextLogStatement(args, outputFd))
+                ++numLogMsgs;
 
-        if (outputFd)
-            fprintf(outputFd, "\r\n\r\n# Decompression Complete after printing "
-                              "%ld log messages\r\n", numLogMsgs);
-        return 0;
+            if (outputFd)
+                fprintf(outputFd, "\r\n\r\n# Decompression Complete after printing "
+                                  "%ld log messages\r\n", numLogMsgs);
+            return 0;
+#ifdef ENABLE_JSON_OUTPUT
+        }
+#endif
     }
 
     // Perform unsorted aggregation
