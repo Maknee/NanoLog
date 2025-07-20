@@ -1,0 +1,57 @@
+@PACKAGE_INIT@
+
+# NanoLogConfig.cmake - CMake configuration file for NanoLog
+#
+# This file provides configuration for the NanoLog logging library.
+# 
+# Usage:
+#   find_package(NanoLog REQUIRED)
+#   target_link_libraries(your_target NanoLog::NanoLog)
+#
+# This will automatically set up:
+#   - Include directories
+#   - Compiler flags (C++17)
+#   - Required system libraries (threads, rt)
+#   - Preprocessor definitions
+
+include(CMakeFindDependencyMacro)
+include(FindPackageHandleStandardArgs)
+
+# Find required dependencies
+find_dependency(Threads REQUIRED)
+
+# Find RT library (custom module)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+find_dependency(RT REQUIRED)
+
+# Include the exported targets
+include("${CMAKE_CURRENT_LIST_DIR}/NanoLogTargets.cmake")
+
+# Provide helpful information
+if(NOT TARGET NanoLog::NanoLog)
+    message(FATAL_ERROR "NanoLog::NanoLog target not found")
+endif()
+
+# Set up any additional configuration
+set(NanoLog_VERSION @PROJECT_VERSION@)
+set(NanoLog_VERSION_MAJOR @PROJECT_VERSION_MAJOR@)
+set(NanoLog_VERSION_MINOR @PROJECT_VERSION_MINOR@)
+set(NanoLog_VERSION_PATCH @PROJECT_VERSION_PATCH@)
+
+# Mark as found
+set(NanoLog_FOUND TRUE)
+
+# Provide usage information
+get_target_property(NanoLog_INCLUDE_DIRS NanoLog::NanoLog INTERFACE_INCLUDE_DIRECTORIES)
+get_target_property(NanoLog_COMPILE_FEATURES NanoLog::NanoLog INTERFACE_COMPILE_FEATURES)
+get_target_property(NanoLog_LINK_LIBRARIES NanoLog::NanoLog INTERFACE_LINK_LIBRARIES)
+
+if(NOT NanoLog_FIND_QUIETLY)
+    message(STATUS "Found NanoLog ${NanoLog_VERSION}")
+    message(STATUS "  NanoLog include dirs: ${NanoLog_INCLUDE_DIRS}")
+    message(STATUS "  NanoLog compile features: ${NanoLog_COMPILE_FEATURES}")
+    message(STATUS "  NanoLog link libraries: ${NanoLog_LINK_LIBRARIES}")
+endif()
+
+# Check that all required components are available
+set(NanoLog_FOUND TRUE) 

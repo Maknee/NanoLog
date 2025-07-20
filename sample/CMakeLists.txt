@@ -1,17 +1,19 @@
 # Sample application CMakeLists.txt
 # This builds the sampleApplication equivalent to the GNUmakefile
+# 
+# MODERN USAGE (recommended):
+# Just link against NanoLog::NanoLog - everything else is automatic!
 
 # Add the sample application executable
 add_executable(sampleApplication main.cc)
 
-# Make sure GeneratedCode is built before the sample application
-add_dependencies(sampleApplication GeneratedCode)
-
-# Include the NanoLog runtime directory and build directory for generated code
-target_include_directories(sampleApplication PRIVATE 
-    ${PROJECT_SOURCE_DIR}/runtime
-    ${CMAKE_CURRENT_BINARY_DIR}/..  # For GeneratedCode.h in parent build dir
-)
+# Easy modern approach - just link against NanoLog::NanoLog
+# This automatically provides:
+#   - Include directories (runtime headers + GeneratedCode.h)
+#   - C++17 requirement
+#   - Required system libraries (threads, rt)
+#   - Preprocessor definitions
+target_link_libraries(sampleApplication NanoLog::NanoLog)
 
 # Set compiler flags to match the original makefile
 # -Werror=format should _always_ be enabled to catch formatting errors
@@ -22,13 +24,6 @@ target_compile_options(sampleApplication PRIVATE
     -DNDEBUG 
     -O3 
     -g
-)
-
-# Link against NanoLog library, pthreads, and POSIX aio
-target_link_libraries(sampleApplication 
-    ${PROJECT_NAME} 
-    ${CMAKE_THREAD_LIBS_INIT} 
-    ${RT_LIBRARIES}
 )
 
 # Install the sample application (optional)
