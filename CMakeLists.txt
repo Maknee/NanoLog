@@ -106,7 +106,6 @@ if(BUILD_DECOMPRESSOR)
         ${PROJECT_SOURCE_DIR}/runtime
         ${CMAKE_CURRENT_BINARY_DIR}  # For GeneratedCode.h
     )
-    target_compile_definitions(decompressor PRIVATE -UPREPROCESSOR_NANOLOG)
     target_link_libraries(decompressor ${PROJECT_NAME})
     
     # Set compiler flags to match the original makefile
