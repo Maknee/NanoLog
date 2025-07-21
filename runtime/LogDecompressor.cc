@@ -73,7 +73,85 @@ printLogMetadataContainingSubstring(std::string searchString)
 
 #ifdef ENABLE_JSON_OUTPUT
 /**
- * Convert a LogMessage to JSON format with proper text formatting
+ * Parse a formatted log message and extract its components
+ * 
+ * \param formattedText
+ *      The formatted text from the decompressor
+ * \param[out] timestamp
+ *      Extracted timestamp string
+ * \param[out] filepath
+ *      Extracted file path
+ * \param[out] lineNumber
+ *      Extracted line number
+ * \param[out] logLevel
+ *      Extracted log level
+ * \param[out] threadId
+ *      Extracted thread ID
+ * \param[out] message
+ *      Extracted actual log message content
+ * \return
+ *      True if parsing was successful
+ */
+bool parseFormattedMessage(const std::string& formattedText,
+                          std::string& timestamp,
+                          std::string& filepath,
+                          int& lineNumber,
+                          std::string& logLevel,
+                          int& threadId,
+                          std::string& message) {
+    // Expected format: "YYYY-MM-DD HH:MM:SS.nnnnnnnnn filepath:line LOGLEVEL[threadId]: actual_message"
+    
+    if (formattedText.empty()) return false;
+    
+    size_t pos = 0;
+    
+    // Extract timestamp (first 29 characters: "YYYY-MM-DD HH:MM:SS.nnnnnnnnn")
+    if (formattedText.length() < 29) return false;
+    timestamp = formattedText.substr(0, 29);
+    pos = 30; // Skip space after timestamp
+    
+    // Find the space before log level (which comes before the colon and message)
+    size_t colonPos = formattedText.find(": ", pos);
+    if (colonPos == std::string::npos) return false;
+    
+    // Work backwards from colon to find the log level section
+    size_t spaceBeforeLogLevel = formattedText.rfind(' ', colonPos - 1);
+    if (spaceBeforeLogLevel == std::string::npos || spaceBeforeLogLevel <= pos) return false;
+    
+    // Extract filepath:line (between timestamp and log level)
+    std::string filepathLine = formattedText.substr(pos, spaceBeforeLogLevel - pos);
+    size_t colonInPath = filepathLine.rfind(':');
+    if (colonInPath == std::string::npos) return false;
+    
+    filepath = filepathLine.substr(0, colonInPath);
+    try {
+        lineNumber = std::stoi(filepathLine.substr(colonInPath + 1));
+    } catch (...) {
+        return false;
+    }
+    
+    // Extract log level and thread ID (format: "LOGLEVEL[threadId]")
+    std::string logLevelSection = formattedText.substr(spaceBeforeLogLevel + 1, colonPos - spaceBeforeLogLevel - 1);
+    size_t bracketStart = logLevelSection.find('[');
+    size_t bracketEnd = logLevelSection.find(']');
+    
+    if (bracketStart == std::string::npos || bracketEnd == std::string::npos) return false;
+    
+    logLevel = logLevelSection.substr(0, bracketStart);
+    try {
+        threadId = std::stoi(logLevelSection.substr(bracketStart + 1, bracketEnd - bracketStart - 1));
+    } catch (...) {
+        return false;
+    }
+    
+    // Extract the actual message (everything after ": ")
+    message = formattedText.substr(colonPos + 2);
+    
+    return true;
+}
+
+/**
+ * Convert a LogMessage to JSON format with parsed message components
  * 
  * \param logMsg
  *      The log message to convert
@@ -90,8 +168,30 @@ nlohmann::json logMessageToJson(LogMessage& logMsg, const std::string& formatted
     jsonLog["timestamp"] = logMsg.getTimestamp();
     jsonLog["numArgs"] = logMsg.getNumArgs();
     
-    // Include the properly formatted message text
-    jsonLog["message"] = formattedText;
+    // Parse the formatted message into components
+    std::string timestamp, filepath, logLevel, message;
+    int lineNumber, threadId;
+    
+    if (parseFormattedMessage(formattedText, timestamp, filepath, lineNumber, logLevel, threadId, message)) {
+        // Successfully parsed - add structured fields
+        jsonLog["datetime"] = timestamp;
+        jsonLog["filepath"] = filepath;
+        jsonLog["lineNumber"] = lineNumber;
+        jsonLog["logLevel"] = logLevel;
+        jsonLog["threadId"] = threadId;
+        jsonLog["message"] = message;
+    } else {
+        // Fallback - use the full formatted text as message
+        jsonLog["message"] = formattedText;
+        jsonLog["datetime"] = "";
+        jsonLog["filepath"] = "";
+        jsonLog["lineNumber"] = 0;
+        jsonLog["logLevel"] = "";
+        jsonLog["threadId"] = 0;
+    }
+    
+    // Also include the original formatted text for reference
+    jsonLog["formattedText"] = formattedText;
     
     // Extract raw arguments for programmatic access
     nlohmann::json rawArgs = nlohmann::json::array();
